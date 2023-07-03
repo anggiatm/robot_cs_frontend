@@ -29,6 +29,8 @@ function App() {
   const [finalTrans, setFinalTrans] = useState("");
   const [chat, setChat] = useState("");
 
+  const [listen, setListen] = useState(true);
+
   useEffect(() => {
     if (trans !== finalTrans) {
       // sendHandle(trans)
@@ -97,7 +99,7 @@ function App() {
 
   const setting = {
     language: "id",
-    continuous: true,
+    continuous: false,
   };
 
   if (browserSupportsSpeechRecognition) {
@@ -118,6 +120,8 @@ function App() {
       <button onClick={resetTranscript}>Reset</button>
       <p>{transcript}</p>
       <p>{trans}</p>
+
+      <p>{listen ? "true" : "false"}</p>
 
       <audio>j</audio>
 
