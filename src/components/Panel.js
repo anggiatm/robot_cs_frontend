@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useContext, useEffect } from "react";
+import { RobotIpContext } from "./RobotIpContext";
 
 import SpeechRecognition, {
   useSpeechRecognition,
@@ -35,9 +36,15 @@ const setting = {
 };
 
 const Panel = () => {
-  const { sendMessage, messages } = useWebSocket(
-    process.env.REACT_APP_ROBOT_WS_ADDR
-  ); // Ganti URL sesuai server WebSocket Anda
+  const { robotIp } = useContext(RobotIpContext);
+
+  const wsUrl = robotIp ? `ws://${robotIp}/ws` : `ws://localhost/ws`;
+
+  // Establish WebSocket connection
+  const { sendMessage, lastMessage, readyState } = useWebSocket(wsUrl, {
+    shouldReconnect: () => true, // Reconnect automatically
+  });
+
   const {
     transcript,
     finalTranscript,
@@ -47,7 +54,8 @@ const Panel = () => {
   } = useSpeechRecognition();
   const [wait, setWait] = useState(false);
   const [wsMessage, setWsMessage] = useState("");
-  const [robotStat, setRobotStat] = useState("listening");
+  const [robotStat, setRobotStat] = useState("");
+  const [robotNeckStat, setRobotNeckStat] = useState("neckc");
   const [lastRequest, setLastRequest] = useState(new Date());
   const [sessionId, setSessionId] = useState(generate_random_string("http"));
 
@@ -59,6 +67,7 @@ const Panel = () => {
   const startListening = () => {
     setWait(false);
     SpeechRecognition.startListening(setting);
+    setRobotStat("listening");
   };
 
   const stopListening = () => {
@@ -72,9 +81,9 @@ const Panel = () => {
 
   const getAudio = (data, endpoint) => {
     setWait(true);
-
-    let config = {
-      method: "post",
+    setRobotStat("thinking");
+    const config = {
+      method: "POST",
       maxBodyLength: Infinity,
       url: process.env.REACT_APP_SERVER_ADDR + endpoint,
       headers: {
@@ -82,7 +91,6 @@ const Panel = () => {
       },
       data: data,
     };
-
     axios(config)
       .then((response) => {
         console.log(response.data.response);
@@ -102,7 +110,7 @@ const Panel = () => {
 
               // Membuat AnalyserNode
               const analyser = audioContext.createAnalyser();
-              analyser.fftSize = 2048; // Ukuran FFT untuk resolusi data frekuensi
+              analyser.fftSize = 256; // Ukuran FFT untuk resolusi data frekuensi
               const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
               // Menghubungkan sourceNode ke AnalyserNode dan audioContext
@@ -114,21 +122,25 @@ const Panel = () => {
               // Fungsi untuk mengambil dan menampilkan data frekuensi hanya saat audio diputar
               const logFrequencyData = () => {
                 analyser.getByteTimeDomainData(dataArray);
-                let averageValue =
+                const averageValue =
                   dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-                let normalizedValue = Math.round(
+                const normalizedValue = Math.round(
                   Math.pow(
                     Math.min(4096, Math.max(0, averageValue * 16)) - 2025,
                     2
                   )
                 );
-                if (normalizedValue > 300) {
+
+                if (normalizedValue > 2000 && normalizedValue < 10000) {
                   setRobotStat("mouthup");
-                  // stat = SPEAKING_MOUTH_UP;
-                } else {
-                  // stat = SPEAKING_MOUTH_DOWN;
+                } else if (normalizedValue > 10000) {
+                  setRobotStat("neckl");
+                } else if (normalizedValue < 50) {
+                  setRobotStat("neckr");
+                } else if (normalizedValue < 200 && normalizedValue > 50) {
                   setRobotStat("mouthdown");
                 }
+
                 animationId = requestAnimationFrame(logFrequencyData); // Memanggil fungsi ini secara berulang
               };
 
@@ -140,8 +152,10 @@ const Panel = () => {
               sourceNode.addEventListener("ended", () => {
                 console.log("Audio selesai diputar");
                 cancelAnimationFrame(animationId);
-                startListening(); // Memulai pendengaran kembali setelah audio selesai
+                startListening();
               });
+
+              sendMessage("neckc");
 
               reseTrans();
             })
@@ -162,7 +176,7 @@ const Panel = () => {
 
   // Fungsi yang akan dijalankan setiap 5 menit
   const boring = () => {
-    console.log(lastRequest);
+    // console.log(lastRequest);
     if (
       new Date() - lastRequest >
       parseInt(process.env.REACT_APP_BORING_TIMEOUT)
@@ -178,6 +192,46 @@ const Panel = () => {
     // Membersihkan interval saat komponen di-unmount
     return () => clearInterval(intervalId);
   }, [lastRequest]);
+
+  useEffect(() => {
+    const LISTENING = 1;
+    const THINKING = 2;
+    const SPEAKING_MOUTH_UP = 3;
+    const SPEAKING_MOUTH_DOWN = 4;
+    const SPEAKING_NECK_L = 5;
+    const SPEAKING_NECK_R = 6;
+    const SPEAKING_NECK_C = 7;
+
+    switch (robotStat) {
+      case "mouthdown":
+        sendMessage(SPEAKING_MOUTH_DOWN);
+        break;
+
+      case "mouthup":
+        sendMessage(SPEAKING_MOUTH_UP);
+        break;
+
+      case "listening":
+        sendMessage(LISTENING);
+        break;
+
+      case "thinking":
+        sendMessage(THINKING);
+        break;
+
+      case "neckl":
+        sendMessage(SPEAKING_NECK_L);
+        break;
+
+      case "neckr":
+        sendMessage(SPEAKING_NECK_R);
+        break;
+
+      case "neckc":
+        sendMessage(SPEAKING_NECK_C);
+        break;
+    }
+  }, [robotStat]);
 
   useEffect(() => {
     if (!wait) {
@@ -211,6 +265,9 @@ const Panel = () => {
         <button onClick={reseTrans}>Reset</button>
         <button onClick={boring}>Boring</button>
         <p>{transcript}</p>
+        <p>Robot IP: {robotIp || "Not set yet."}</p>
+
+        <button onClick={handleSendWsMessage}>Send Ws</button>
       </div>
     );
   }
