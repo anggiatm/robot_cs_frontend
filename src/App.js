@@ -8,15 +8,15 @@ const App = () => {
   return (
     <RobotIpProvider>
       <Router>
+        <Routes>
+          <Route path="/" element={<Panel />} />
+          <Route path="/config" element={<Config />} />
+        </Routes>
         <nav>
           <Link to="/">Panel</Link>
           {" | "}
           <Link to="/config">Config</Link>
         </nav>
-        <Routes>
-          <Route path="/" element={<Panel />} />
-          <Route path="/config" element={<Config />} />
-        </Routes>
       </Router>
     </RobotIpProvider>
   );

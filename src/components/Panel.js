@@ -1,13 +1,23 @@
 import { useState, useContext, useEffect } from "react";
 import { RobotIpContext } from "./RobotIpContext";
-
 import SpeechRecognition, {
   useSpeechRecognition,
 } from "react-speech-recognition";
-
 import axios from "axios";
-
 import useWebSocket from "../hook/useWebSocket";
+import { Box, Typography } from "@mui/material";
+
+import BounceAnimation from "./BounceAnimation";
+import { faMicrophone } from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+
+const LISTENING = 1;
+const THINKING = 2;
+const SPEAKING_MOUTH_UP = 3;
+const SPEAKING_MOUTH_DOWN = 4;
+const SPEAKING_NECK_L = 5;
+const SPEAKING_NECK_R = 6;
+const SPEAKING_NECK_C = 7;
 
 function toArrayBuffer(buffer) {
   const arrayBuffer = new ArrayBuffer(buffer.length);
@@ -41,13 +51,12 @@ const Panel = () => {
   const wsUrl = robotIp ? `ws://${robotIp}/ws` : `ws://localhost/ws`;
 
   // Establish WebSocket connection
-  const { sendMessage, lastMessage, readyState } = useWebSocket(wsUrl, {
+  const { sendMessage } = useWebSocket(wsUrl, {
     shouldReconnect: () => true, // Reconnect automatically
   });
 
   const {
     transcript,
-    finalTranscript,
     listening,
     resetTranscript,
     browserSupportsSpeechRecognition,
@@ -55,9 +64,10 @@ const Panel = () => {
   const [wait, setWait] = useState(false);
   const [wsMessage, setWsMessage] = useState("");
   const [robotStat, setRobotStat] = useState("");
-  const [robotNeckStat, setRobotNeckStat] = useState("neckc");
   const [lastRequest, setLastRequest] = useState(new Date());
   const [sessionId, setSessionId] = useState(generate_random_string("http"));
+
+  const [displayText, setDisplayText] = useState("");
 
   const handleSendWsMessage = () => {
     sendMessage(wsMessage); // Mengirim pesan melalui WebSocket
@@ -68,6 +78,7 @@ const Panel = () => {
     setWait(false);
     SpeechRecognition.startListening(setting);
     setRobotStat("listening");
+    setDisplayText("Silahkan tanya Mimi !");
   };
 
   const stopListening = () => {
@@ -82,6 +93,8 @@ const Panel = () => {
   const getAudio = (data, endpoint) => {
     setWait(true);
     setRobotStat("thinking");
+    setDisplayText("Mimi sedang berfikir");
+
     const config = {
       method: "POST",
       maxBodyLength: Infinity,
@@ -94,6 +107,9 @@ const Panel = () => {
     axios(config)
       .then((response) => {
         console.log(response.data.response);
+
+        // setAnswer();
+        setDisplayText(response.data.response);
 
         if (response.data.audio && response.data.audio.length > 50) {
           const audioContext = new window.AudioContext();
@@ -176,13 +192,12 @@ const Panel = () => {
 
   // Fungsi yang akan dijalankan setiap 5 menit
   const boring = () => {
-    // console.log(lastRequest);
     if (
       new Date() - lastRequest >
       parseInt(process.env.REACT_APP_BORING_TIMEOUT)
     ) {
       getAudio({}, "boring");
-      generate_random_string("http");
+      setSessionId(generate_random_string("http"));
       setLastRequest(new Date());
     }
   };
@@ -194,14 +209,6 @@ const Panel = () => {
   }, [lastRequest]);
 
   useEffect(() => {
-    const LISTENING = 1;
-    const THINKING = 2;
-    const SPEAKING_MOUTH_UP = 3;
-    const SPEAKING_MOUTH_DOWN = 4;
-    const SPEAKING_NECK_L = 5;
-    const SPEAKING_NECK_R = 6;
-    const SPEAKING_NECK_C = 7;
-
     switch (robotStat) {
       case "mouthdown":
         sendMessage(SPEAKING_MOUTH_DOWN);
@@ -256,19 +263,57 @@ const Panel = () => {
     return <span>Browser doesn't support speech recognition.</span>;
   } else {
     return (
-      <div>
-        <p>Microphone: {listening ? "on" : "off"}</p>
-        <button id="start" onClick={startListening}>
-          Start
-        </button>
-        <button onClick={stopListening}>Stop</button>
-        <button onClick={reseTrans}>Reset</button>
-        <button onClick={boring}>Boring</button>
-        <p>{transcript}</p>
-        <p>Robot IP: {robotIp || "Not set yet."}</p>
+      <>
+        <Box
+          sx={{
+            position: "relative",
+            height: "100vh",
+            backgroundImage: "url(/background.png)",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+            filter: "blur(2px)",
+            zIndex: -1,
+          }}></Box>
+        <Box
+          sx={{
+            display: "flex",
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            color: "#ee4b10",
+            textAlign: "center",
+            textShadow: "10px 10px 4px rgba(0, 0, 0, 0.3)",
+            zIndex: 1,
+          }}>
+          <Typography variant="h3" component="div">
+            {transcript === "" ? displayText : transcript}
+          </Typography>
 
-        <button onClick={handleSendWsMessage}>Send Ws</button>
-      </div>
+          {robotStat === "thinking" && transcript === "" ? (
+            <BounceAnimation />
+          ) : robotStat === "listening" && transcript === "" ? (
+            <FontAwesomeIcon icon={faMicrophone} className="shake fa-3x" />
+          ) : (
+            ""
+          )}
+        </Box>
+
+        <div>
+          <p>Microphone: {listening ? "on" : "off"}</p>
+          <button id="start" onClick={startListening}>
+            Start
+          </button>
+          <button onClick={stopListening}>Stop</button>
+          <button onClick={reseTrans}>Reset</button>
+          <button onClick={boring}>Boring</button>
+
+          <p>Robot IP: {robotIp || "Not set yet."}</p>
+
+          <button onClick={handleSendWsMessage}>Send Ws</button>
+        </div>
+      </>
     );
   }
 };
