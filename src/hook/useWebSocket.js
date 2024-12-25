@@ -6,7 +6,7 @@ const useWebSocket = (url, reconnectInterval = 3000) => {
   const reconnectRef = useRef(false); // Status untuk menghindari reconnect berlebih
 
   const connect = () => {
-    console.log("Connecting to WebSocket...");
+    // console.log("Connecting to WebSocket...");
     socketRef.current = new WebSocket(url);
 
     socketRef.current.onopen = () => {
@@ -15,12 +15,12 @@ const useWebSocket = (url, reconnectInterval = 3000) => {
     };
 
     socketRef.current.onmessage = (event) => {
-      console.log("Received data:", event.data);
+      // console.log("Received data:", event.data);
       setMessages((prevMessages) => [...prevMessages, event.data]);
     };
 
     socketRef.current.onclose = () => {
-      console.log("Disconnected from WebSocket server");
+      // console.log("Disconnected from WebSocket server");
       attemptReconnect();
     };
 
@@ -56,7 +56,7 @@ const useWebSocket = (url, reconnectInterval = 3000) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(message);
     } else {
-      console.log("WebSocket not connected");
+      // console.log("WebSocket not connected");
     }
   }, []);
 

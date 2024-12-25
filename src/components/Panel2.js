@@ -1,12 +1,15 @@
-import { useState, useContext, useEffect } from "react";
+import { useState, useContext, useEffect, useRef } from "react";
+import axios from "axios";
+import { toArrayBuffer } from "../utils/toArrayBuffer";
+import { generateRandomString } from "../utils/generateRandomString";
+
 import { RobotIpContext } from "./RobotIpContext";
+import useWebSocket from "../hook/useWebSocket";
 import SpeechRecognition, {
   useSpeechRecognition,
 } from "react-speech-recognition";
-import axios from "axios";
-import useWebSocket from "../hook/useWebSocket";
-import { Box, Typography } from "@mui/material";
 
+import { Box, Typography } from "@mui/material";
 import BounceAnimation from "./BounceAnimation";
 import { faMicrophone } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -19,42 +22,7 @@ const SPEAKING_NECK_L = 5;
 const SPEAKING_NECK_R = 6;
 const SPEAKING_NECK_C = 7;
 
-function toArrayBuffer(buffer) {
-  const arrayBuffer = new ArrayBuffer(buffer.length);
-  const view = new Uint8Array(arrayBuffer);
-  for (let i = 0; i < buffer.length; ++i) {
-    view[i] = buffer[i];
-  }
-  return arrayBuffer;
-}
-
-function generate_random_string(prefix, length = 5) {
-  const characters =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "";
-  const charactersLength = characters.length;
-
-  for (let i = 0; i < length; i++) {
-    result += characters.charAt(Math.floor(Math.random() * charactersLength));
-  }
-  return prefix + "_" + result;
-}
-
-const setting = {
-  language: "id",
-  continuous: false,
-};
-
-const Panel = () => {
-  const { robotIp } = useContext(RobotIpContext);
-
-  const wsUrl = robotIp ? `ws://${robotIp}/ws` : `ws://localhost/ws`;
-
-  // Establish WebSocket connection
-  const { sendMessage } = useWebSocket(wsUrl, {
-    shouldReconnect: () => true, // Reconnect automatically
-  });
-
+const Panel2 = () => {
   const {
     transcript,
     finalTranscript,
@@ -62,41 +30,80 @@ const Panel = () => {
     resetTranscript,
     browserSupportsSpeechRecognition,
   } = useSpeechRecognition();
-  const [wait, setWait] = useState(false);
-  const [wsMessage, setWsMessage] = useState("");
+
   const [robotStat, setRobotStat] = useState("listening");
-  const [lastRequest, setLastRequest] = useState(new Date());
-  const [sessionId, setSessionId] = useState(generate_random_string("http"));
-
   const [displayText, setDisplayText] = useState("Silahkan tanya Mimi !");
+  const sessionId = useRef(generateRandomString("http"));
+  const lastRequestRef = useRef(new Date()); // Inisialisasi ref
 
-  const handleSendWsMessage = () => {
-    sendMessage(wsMessage); // Mengirim pesan melalui WebSocket
-    setWsMessage(""); // Mengosongkan input setelah mengirim
-  };
+  const { robotIp } = useContext(RobotIpContext);
+  const wsUrl = robotIp ? `ws://${robotIp}/ws` : `ws://localhost/ws`;
+  //   Establish WebSocket connection
+  const { sendMessage } = useWebSocket(wsUrl, {
+    shouldReconnect: () => true, // Reconnect automatically
+  });
 
-  const startListening = () => {
-    setWait(false);
-    SpeechRecognition.startListening(setting);
+  const listeningState = () => {
+    SpeechRecognition.startListening({
+      language: "id",
+      continuous: true,
+    });
     setRobotStat("listening");
     setDisplayText("Silahkan tanya Mimi !");
   };
 
-  const stopListening = () => {
-    setWait(true);
+  const thinkingState = () => {
     SpeechRecognition.stopListening();
     setRobotStat("thinking");
-  };
-
-  const reseTrans = () => {
+    setDisplayText("Mimi sedang berfikir");
     resetTranscript();
   };
 
+  const speakingState = (answer) => {
+    SpeechRecognition.stopListening();
+    setRobotStat("speaking");
+    setDisplayText(answer);
+  };
+
+  useEffect(() => {
+    console.log(`useEffect Switch Robot Stat: ${robotStat}`);
+    switch (robotStat) {
+      case "mouthdown":
+        sendMessage(SPEAKING_MOUTH_DOWN);
+        break;
+
+      case "mouthup":
+        sendMessage(SPEAKING_MOUTH_UP);
+        break;
+
+      case "listening":
+        sendMessage(LISTENING);
+        break;
+
+      case "thinking":
+        sendMessage(THINKING);
+        break;
+
+      case "neckl":
+        sendMessage(SPEAKING_NECK_L);
+        break;
+
+      case "neckr":
+        sendMessage(SPEAKING_NECK_R);
+        break;
+
+      case "neckc":
+        sendMessage(SPEAKING_NECK_C);
+        break;
+    }
+  }, [robotStat]);
+
+  useEffect(() => {
+    listeningState();
+  }, []);
+
   const getAudio = (data, endpoint) => {
     console.log("kirim");
-    // setRobotStat("thinking");
-    // setDisplayText("Mimi sedang berfikir");
-
     const config = {
       method: "POST",
       maxBodyLength: Infinity,
@@ -106,10 +113,8 @@ const Panel = () => {
       },
       data: data,
     };
-    // stopListening();
     axios(config)
       .then((response) => {
-        // console.log(response.data.response);
         setDisplayText(response.data.response);
 
         if (response.data.audio && response.data.audio.length > 50) {
@@ -158,7 +163,7 @@ const Panel = () => {
                   setRobotStat("mouthdown");
                 }
 
-                animationId = requestAnimationFrame(logFrequencyData); // Memanggil fungsi ini secara berulang
+                animationId = requestAnimationFrame(logFrequencyData);
               };
 
               // Mulai pemutaran audio dan logging data frekuensi
@@ -169,102 +174,65 @@ const Panel = () => {
               sourceNode.addEventListener("ended", () => {
                 console.log("Audio selesai diputar");
                 cancelAnimationFrame(animationId);
-                startListening();
+                // startListening();
+                listeningState();
               });
 
-              sendMessage("neckc");
-
-              reseTrans();
+              //   sendMessage("neckc");
             })
             .catch((error) => {
               console.error("Error decoding audio:", error);
-              startListening();
+              //   startListening();
+              listeningState();
             });
         } else {
-          startListening(); // Memulai pendengaran jika tidak ada audio yang cukup panjang
+          //   startListening();
+          listeningState();
         }
       })
       .catch((err) => {
         console.error("Error in axios request:", err);
-        const data = {};
-        startListening(data);
+        // startListening();
+        listeningState();
       });
   };
 
-  // Fungsi yang akan dijalankan setiap 5 menit
   const boring = () => {
     if (
-      new Date() - lastRequest >
-      parseInt(process.env.REACT_APP_BORING_TIMEOUT)
+      new Date() - lastRequestRef.current >
+        parseInt(process.env.REACT_APP_BORING_TIMEOUT) &&
+      robotStat === "listening"
     ) {
+      console.log("useEffect Booring Interval");
+      thinkingState();
       getAudio({}, "boring");
-      setSessionId(generate_random_string("http"));
-      setLastRequest(new Date());
+      sessionId.current = generateRandomString("http");
+      lastRequestRef.current = new Date();
+    } else {
+      console.log("useEffect Booring Interval check only");
+
+      console.log(new Date() - lastRequestRef.current);
     }
   };
 
   useEffect(() => {
-    const intervalId = setInterval(boring, 1000); // 300000 ms = 5 menit
-    console.log("useEffect Booring Interval");
+    const intervalId = setInterval(boring, 300000); // 300000 ms = 5 menit
     return () => clearInterval(intervalId);
-  }, [lastRequest]);
-
-  useEffect(() => {
-    console.log("useEffect Switch Robot Stat");
-    switch (robotStat) {
-      case "mouthdown":
-        sendMessage(SPEAKING_MOUTH_DOWN);
-        break;
-
-      case "mouthup":
-        sendMessage(SPEAKING_MOUTH_UP);
-        break;
-
-      case "listening":
-        sendMessage(LISTENING);
-        break;
-
-      case "thinking":
-        sendMessage(THINKING);
-        break;
-
-      case "neckl":
-        sendMessage(SPEAKING_NECK_L);
-        break;
-
-      case "neckr":
-        sendMessage(SPEAKING_NECK_R);
-        break;
-
-      case "neckc":
-        sendMessage(SPEAKING_NECK_C);
-        break;
-    }
   }, []);
 
   useEffect(() => {
-    console.log("useEffect listening getAudio");
-    console.log(finalTranscript);
-    console.log(robotStat);
-    if (robotStat === "listening") {
-      startListening();
+    if (finalTranscript !== "") {
+      console.log(`Final Transcript : ${finalTranscript}`);
+      thinkingState();
+      const data = {
+        text: finalTranscript,
+        session_id: sessionId.current,
+        config: {
+          temperature: 0.2,
+        },
+      };
+      getAudio(data, "answer");
     }
-    // if (!wait) {
-    //   startListening();
-    // }
-    // // if (!listening && !wait) {
-    // setLastRequest(new Date());
-
-    // const data = {
-    //   text: finalTranscript,
-    //   session_id: sessionId,
-    //   config: {
-    //     temperature: 0.2,
-    //   },
-    // };
-    // getAudio(data, "answer");
-    // stopListening();
-    // }
   }, [finalTranscript]);
 
   if (!browserSupportsSpeechRecognition) {
@@ -289,9 +257,12 @@ const Panel = () => {
             position: "absolute",
             top: "50%",
             left: "50%",
+            width: "80%",
             transform: "translate(-50%, -50%)",
             color: "#ee4b10",
             textAlign: "center",
+            justifyContent: "center",
+            alignItems: "center",
             textShadow: "10px 10px 4px rgba(0, 0, 0, 0.3)",
             zIndex: 1,
           }}>
@@ -308,22 +279,16 @@ const Panel = () => {
           )}
         </Box>
 
-        <div>
-          <p>Microphone: {listening ? "on" : "off"}</p>
-          <button id="start" onClick={startListening}>
-            Start
-          </button>
-          <button onClick={stopListening}>Stop</button>
-          <button onClick={reseTrans}>Reset</button>
-          <button onClick={boring}>Boring</button>
-
-          <p>Robot IP: {robotIp || "Not set yet."}</p>
-
-          <button onClick={handleSendWsMessage}>Send Ws</button>
-        </div>
+        <p>Robot Stat: {robotStat}</p>
+        <p>mic: {listening ? "on" : "off"}</p>
+        <button id="start" onClick={listeningState}>
+          Start
+        </button>
+        <p>{transcript}</p>
+        <p>{finalTranscript}</p>
       </>
     );
   }
 };
 
-export default Panel;
+export default Panel2;
